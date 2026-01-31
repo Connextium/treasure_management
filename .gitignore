@@ -1,0 +1,54 @@
+# Environment Variables
+.claude
+*.env
+.env.local
+.env.*.local
+secrets.yaml
+
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+bun.lockb
+
+# Build Outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS Files
+.DS_Store
+*.swp
+*.swo
+*~
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+.history/
+
+# Temporary Files
+tmp/
+temp/
+*.tmp
+
+# Testing
+coverage/
+.nyc_output/
+
+# Chainlink CRE specific
+my-workflow/dist/
+my-workflow/.cre/
+
+# Contract artifacts (handled by contracts/.gitignore)
+# But include generated ABIs if needed for workflow
+# contracts/evm/src/generated/

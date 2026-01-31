@@ -1,0 +1,37 @@
+// prediction-market/my-workflow/main.ts
+
+import { cre, Runner } from "@chainlink/cre-sdk";
+import { createMarketHttpRequester } from "./createMarketHttpRequester";
+import { marketCreatedEventHash } from "./contractAbi";
+import { eventMarketCreatedListener } from "./eventMarketCreatedListener";
+import { createEvmClient, type Config } from "./evmClientFactory";
+
+const initWorkflow = (config: Config) => {
+  // Initialize HTTP capability
+  const httpCapability = new cre.capabilities.HTTPCapability();
+  const httpTrigger = httpCapability.trigger({});
+
+  const evmClient = createEvmClient(config.evms[0].chainSelectorName);
+
+  return [
+    // Day 1: HTTP Trigger - Market Creation
+    cre.handler(httpTrigger, createMarketHttpRequester),
+
+    // Log Trigger - MarketCreated Event Listener
+    cre.handler(
+      evmClient.logTrigger({
+        addresses: [config.evms[0].marketAddress],
+        topics: [{ values: [marketCreatedEventHash] }],
+        confidence: "CONFIDENCE_LEVEL_FINALIZED",
+      }),
+      eventMarketCreatedListener
+    ),
+  ];
+};
+
+export async function main() {
+  const runner = await Runner.newRunner<Config>();
+  await runner.run(initWorkflow);
+}
+
+main();

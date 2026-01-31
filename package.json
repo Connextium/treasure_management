@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.4.0",
+    "typescript-simple-template": "./my-workflow"
+  }
+}
