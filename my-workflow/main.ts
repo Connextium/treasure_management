@@ -1,10 +1,10 @@
 // prediction-market/my-workflow/main.ts
 
 import { cre, Runner } from "@chainlink/cre-sdk";
-import { createMarketHttpRequester } from "./createMarketHttpRequester";
-import { marketCreatedEventHash } from "./contractAbi";
-import { eventMarketCreatedListener } from "./eventMarketCreatedListener";
-import { createEvmClient, type Config } from "./evmClientFactory";
+import { createMarketHttpRequester } from "./marketpredictor/createMarketHttpRequester";
+import { marketCreatedEventHash } from "./marketpredictor/marketPredictorAbiMapper";
+import { eventMarketCreatedListener } from "./marketpredictor/eventMarketCreatedListener";
+import { createEvmClient, type Config } from "./utils/evmClientFactory";
 
 const initWorkflow = (config: Config) => {
   // Initialize HTTP capability

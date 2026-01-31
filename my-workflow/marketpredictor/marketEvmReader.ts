@@ -7,8 +7,8 @@ import {
   LAST_FINALIZED_BLOCK_NUMBER,
 } from "@chainlink/cre-sdk";
 import { encodeFunctionData, decodeFunctionResult, zeroAddress } from "viem";
-import { createEvmClient, type Config } from "./evmClientFactory";
-import { getMarketAbi } from "./contractAbi";
+import { createEvmClient, type Config } from "../utils/evmClientFactory";
+import { getMarketAbi } from "./marketPredictorAbiMapper";
 
 export interface Market {
   creator: `0x${string}`;

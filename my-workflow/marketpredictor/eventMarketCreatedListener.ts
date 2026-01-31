@@ -6,9 +6,9 @@ import {
   bytesToHex,
 } from "@chainlink/cre-sdk";
 import { decodeEventLog } from "viem";
-import { type Config } from "./evmClientFactory";
-import { marketCreatedAbi } from "./contractAbi";
-import { evmMarketReader, type Market } from "./evmMarketReader";
+import { type Config } from "../utils/evmClientFactory";
+import { marketCreatedAbi } from "./marketPredictorAbiMapper";
+import { evmMarketReader, type Market } from "./marketEvmReader";
 
 export function eventMarketCreatedListener(runtime: Runtime<Config>, payload: EVMLog): Market {
   runtime.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");

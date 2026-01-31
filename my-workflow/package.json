@@ -4,13 +4,17 @@
   "main": "dist/main.js",
   "private": true,
   "scripts": {
-    "postinstall": "bunx cre-setup"
+    "postinstall": "bunx cre-setup",
+    "codegen": "wagmi generate",
+    "build:contracts": "cd ../contracts && forge build && cd ../my-workflow && bun run codegen"
   },
   "license": "UNLICENSED",
   "dependencies": {
     "@chainlink/cre-sdk": "^1.0.3"
   },
   "devDependencies": {
-    "@types/bun": "1.2.21"
+    "@types/bun": "1.2.21",
+    "@wagmi/cli": "^2.1.18",
+    "viem": "^2.21.54"
   }
 }

@@ -9,7 +9,7 @@ import {
   decodeJson,
 } from "@chainlink/cre-sdk";
 import { encodeAbiParameters, parseAbiParameters } from "viem";
-import { createEvmClient, type Config } from "./evmClientFactory";
+import { createEvmClient, type Config } from "../utils/evmClientFactory";
 
 interface CreateMarketPayload {
   question: string;
