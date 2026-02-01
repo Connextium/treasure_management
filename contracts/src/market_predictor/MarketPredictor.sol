@@ -14,6 +14,7 @@ contract MarketPredictor is ReceiverTemplate {
     error NothingToClaim();
     error AlreadyClaimed();
     error TransferFailed();
+    error InvalidSelector();
 
     event MarketCreated(uint256 indexed marketId, string question, address creator);
     event PredictionMade(uint256 indexed marketId, address indexed predictor, Prediction prediction, uint256 amount);
@@ -157,16 +158,23 @@ contract MarketPredictor is ReceiverTemplate {
     // ================================================================
 
     /// @inheritdoc ReceiverTemplate
-    /// @dev Routes to either market creation or settlement based on prefix byte.
-    ///      - No prefix → Create market (Day 1)
-    ///      - Prefix 0x01 → Settle market (Day 2)
+    /// @dev Routes based on function selector.
+    ///      - SETTLE_MARKET_SELECTOR → Settle market
+    ///      - CREATE_MARKET_SELECTOR → Create market
     function _processReport(bytes calldata report) internal override {
-        if (report.length > 0 && report[0] == 0x01) {
-            _settleMarket(report[1:]);
-        } else {
-            string memory question = abi.decode(report, (string));
-            createMarket(question);
+        if (report.length >= 4) {
+            bytes4 selector = bytes4(report[0:4]);
+            if (selector == SETTLE_MARKET_SELECTOR) {
+                _settleMarket(report[4:]);
+                return;
+            }
+            if (selector == CREATE_MARKET_SELECTOR) {
+                string memory question = abi.decode(report[4:], (string));
+                createMarket(question);
+                return;
+            }
         }
+        revert InvalidSelector();
     }
 
     // ================================================================
@@ -215,4 +223,8 @@ contract MarketPredictor is ReceiverTemplate {
     function getPrediction(uint256 marketId, address user) external view returns (UserPrediction memory) {
         return predictions[marketId][user];
     }
+
+    /// @dev Function selectors for CRE report routing
+    bytes4 private constant SETTLE_MARKET_SELECTOR = bytes4(keccak256("settleMarket(uint256,uint8,uint16)"));
+    bytes4 private constant CREATE_MARKET_SELECTOR = bytes4(keccak256("createMarket(string)"));
 }

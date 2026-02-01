@@ -8,12 +8,16 @@ import {
   TxStatus,
   decodeJson,
 } from "@chainlink/cre-sdk";
-import { encodeAbiParameters, parseAbiParameters } from "viem";
+import { encodeAbiParameters, parseAbiParameters, keccak256 } from "viem";
 import { createEvmClient, type Config } from "../utils/evmClientFactory";
 
 interface CreateMarketPayload {
   question: string;
 }
+
+// Function signature for creation routing
+const CREATE_MARKET_SIGNATURE = "createMarket(string)";
+const CREATE_MARKET_SELECTOR = keccak256(Buffer.from(CREATE_MARKET_SIGNATURE)).slice(0, 10); // 4 bytes = "0x" + 8 hex chars
 
 // ABI parameters for createMarket function
 const CREATE_MARKET_PARAMS = parseAbiParameters("string question");
@@ -55,8 +59,9 @@ export function createMarketHttpRequester(runtime: Runtime<Config>, payload: HTT
     // ─────────────────────────────────────────────────────────────
     runtime.log("[Step 3] Encoding market data...");
 
-    // Parameters and input for createMarket function
-    const reportData = encodeAbiParameters(CREATE_MARKET_PARAMS, [inputData.question]);
+    const encodedData = encodeAbiParameters(CREATE_MARKET_PARAMS, [inputData.question]);
+    const prefixedData = CREATE_MARKET_SELECTOR + encodedData.slice(2);
+    runtime.log(`[Step 3] Adding function selector: ${CREATE_MARKET_SELECTOR}`);
 
     // ─────────────────────────────────────────────────────────────
     // Step 4: Generate a signed CRE report
@@ -65,7 +70,7 @@ export function createMarketHttpRequester(runtime: Runtime<Config>, payload: HTT
 
     const reportResponse = runtime
       .report({
-        encodedPayload: hexToBase64(reportData),
+        encodedPayload: hexToBase64(prefixedData),
         encoderName: "evm",
         signingAlgo: "ecdsa",
         hashingAlgo: "keccak256",
