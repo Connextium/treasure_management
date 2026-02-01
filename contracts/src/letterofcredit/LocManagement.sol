@@ -4,12 +4,14 @@ pragma solidity ^0.8.13;
 import "./Loc.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "../treasure/ITreasureLedger.sol";
+import {ReceiverTemplate} from "../interfaces/ReceiverTemplate.sol";
 
 /**
  * @title LocManagement
  * @dev Manages the creation, activation, settlement, and expiration of Letters of Credit
+ * Features CRE integration via ReceiverTemplate (provides Ownable) for automated LC operations
  */
-contract LocManagement is Ownable {
+contract LocManagement is ReceiverTemplate {
     // State variables
     ITreasureLedger public treasureLedger;
     address public issuingBank;
@@ -50,8 +52,11 @@ contract LocManagement is Ownable {
      * @dev Initialize LocManagement contract
      * @param _treasureLedgerAddress Address of TreasureLedger contract
      * @param _issuingBankAddr Address of issuing bank
+     * @param _forwarderAddress The address of the Chainlink KeystoneForwarder contract
      */
-    constructor(address _treasureLedgerAddress, address _issuingBankAddr) Ownable(msg.sender) {
+    constructor(address _treasureLedgerAddress, address _issuingBankAddr, address _forwarderAddress) 
+        ReceiverTemplate(_forwarderAddress)
+    {
         require(_treasureLedgerAddress != address(0), "LocManagement: invalid treasury address");
         require(_issuingBankAddr != address(0), "LocManagement: invalid issuing bank address");
 
@@ -127,6 +132,14 @@ contract LocManagement is Ownable {
      */
     function settleLC(uint256 _locNo) public locMustExist(_locNo) {
         Loc locContract = Loc(locContracts[_locNo]);
+        Loc.LocData memory locData = locContract.getLocData();
+        
+        // Verify caller is the seller or contract owner
+        require(
+            msg.sender == locData.sellerAcc || msg.sender == owner(),
+            "LocManagement: caller is not authorized to settle"
+        );
+        
         locContract.settleLC();
         emit LCSettled(_locNo, block.timestamp);
     }
@@ -189,4 +202,54 @@ contract LocManagement is Ownable {
         require(_newIssuingBank != address(0), "LocManagement: invalid issuing bank address");
         issuingBank = _newIssuingBank;
     }
+
+    // ================================================================
+    // │                      CRE Entry Point                         │
+    // ================================================================
+
+    /// @inheritdoc ReceiverTemplate
+    /// @dev Routes based on function selector for CRE-triggered LC operations.
+    ///      - ISSUE_LC_SELECTOR → Issue new LC
+    ///      - ACTIVATE_LC_SELECTOR → Activate LC
+    ///      - SETTLE_LC_SELECTOR → Settle LC
+    ///      - EXPIRE_LC_SELECTOR → Expire LC
+    function _processReport(bytes calldata report) internal override {
+        if (report.length >= 4) {
+            bytes4 selector = bytes4(report[0:4]);
+            if (selector == ISSUE_LC_SELECTOR) {
+                (
+                    uint256 locNo,
+                    address buyerAcc,
+                    address sellerAcc,
+                    uint256 amount,
+                    uint256 dateOfIssue,
+                    uint256 dateOfExpiry
+                ) = abi.decode(report[4:], (uint256, address, address, uint256, uint256, uint256));
+                issueLC(locNo, buyerAcc, sellerAcc, amount, dateOfIssue, dateOfExpiry);
+                return;
+            }
+            if (selector == ACTIVATE_LC_SELECTOR) {
+                uint256 locNo = abi.decode(report[4:], (uint256));
+                activateLC(locNo);
+                return;
+            }
+            if (selector == SETTLE_LC_SELECTOR) {
+                uint256 locNo = abi.decode(report[4:], (uint256));
+                settleLC(locNo);
+                return;
+            }
+            if (selector == EXPIRE_LC_SELECTOR) {
+                uint256 locNo = abi.decode(report[4:], (uint256));
+                expireLC(locNo);
+                return;
+            }
+        }
+        revert("LocManagement: Invalid selector");
+    }
+
+    /// @dev Function selectors for CRE report routing
+    bytes4 private constant ISSUE_LC_SELECTOR = bytes4(keccak256("issueLC(uint256,address,address,uint256,uint256,uint256)"));
+    bytes4 private constant ACTIVATE_LC_SELECTOR = bytes4(keccak256("activateLC(uint256)"));
+    bytes4 private constant SETTLE_LC_SELECTOR = bytes4(keccak256("settleLC(uint256)"));
+    bytes4 private constant EXPIRE_LC_SELECTOR = bytes4(keccak256("expireLC(uint256)"));
 }

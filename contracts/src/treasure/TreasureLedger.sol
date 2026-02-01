@@ -6,6 +6,17 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
+import {ReceiverTemplate} from "../interfaces/ReceiverTemplate.sol";
+
+/**
+ * @title ITreasureLedger
+ * @dev Interface for TreasureLedger contract
+ */
+interface ITreasureLedger {
+    function mint(address to, uint256 amount) external;
+    function pause() external;
+    function unpause() external;
+}
 
 /**
  * @title TreasureLedger
@@ -16,8 +27,9 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
  * - Pausable: contract can be paused by owner
  * - Permit: gas-less approvals via EIP-2612
  * - Role-based access control for minting
+ * - CRE integration via ReceiverTemplate (provides Ownable)
  */
-contract TreasureLedger is ERC20, ERC20Burnable, ERC20Pausable, Ownable, ERC20Permit {
+contract TreasureLedger is ERC20, ERC20Burnable, ERC20Pausable, ERC20Permit, ReceiverTemplate {
     // Minter role for controlled issuance
     mapping(address => bool) public minters;
 
@@ -37,7 +49,14 @@ contract TreasureLedger is ERC20, ERC20Burnable, ERC20Pausable, Ownable, ERC20Pe
         _;
     }
 
-    constructor() ERC20("Treasure Ledger", "CDSC") Ownable(msg.sender) ERC20Permit("Treasure Ledger") {
+    /// @notice Constructor sets the Chainlink Forwarder address for CRE integration
+    /// @param _forwarderAddress The address of the Chainlink KeystoneForwarder contract
+    /// @dev For Sepolia testnet, use: 0x15fc6ae953e024d975e77382eeec56a9101f9f88
+    constructor(address _forwarderAddress) 
+        ERC20("Treasure Ledger", "CDSC") 
+        ERC20Permit("Treasure Ledger")
+        ReceiverTemplate(_forwarderAddress)
+    {
         minters[msg.sender] = true;
     }
 
@@ -194,4 +213,38 @@ contract TreasureLedger is ERC20, ERC20Burnable, ERC20Pausable, Ownable, ERC20Pe
     {
         return super.nonces(owner);
     }
+
+    // ================================================================
+    // │                      CRE Entry Point                         │
+    // ================================================================
+
+    /// @inheritdoc ReceiverTemplate
+    /// @dev Routes based on function selector for CRE-triggered operations.
+    ///      - MINT_SELECTOR → Mint tokens
+    ///      - PAUSE_SELECTOR → Pause contract
+    ///      - UNPAUSE_SELECTOR → Unpause contract
+    function _processReport(bytes calldata report) internal override {
+        if (report.length >= 4) {
+            bytes4 selector = bytes4(report[0:4]);
+            if (selector == MINT_SELECTOR) {
+                (address to, uint256 amount) = abi.decode(report[4:], (address, uint256));
+                mint(to, amount);
+                return;
+            }
+            if (selector == PAUSE_SELECTOR) {
+                pause();
+                return;
+            }
+            if (selector == UNPAUSE_SELECTOR) {
+                unpause();
+                return;
+            }
+        }
+        revert("TreasureLedger: Invalid selector");
+    }
+
+    /// @dev Function selectors for CRE report routing
+    bytes4 private constant MINT_SELECTOR = bytes4(keccak256("mint(address,uint256)"));
+    bytes4 private constant PAUSE_SELECTOR = bytes4(keccak256("pause()"));
+    bytes4 private constant UNPAUSE_SELECTOR = bytes4(keccak256("unpause()"));
 }

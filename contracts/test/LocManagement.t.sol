@@ -14,16 +14,17 @@ contract LocManagementTest is Test {
     address buyer = address(2);
     address seller = address(3);
     address owner = address(4);
+    address forwarder = address(0x15fC6ae953E024d975e77382eEeC56A9101f9F88); // Mock forwarder address
 
     uint256 constant LC_AMOUNT = 10000e18;
     uint256 constant LC_NO = 1001;
 
     function setUp() public {
         vm.prank(owner);
-        treasureLedger = new TreasureLedger();
+        treasureLedger = new TreasureLedger(forwarder);
 
         vm.prank(owner);
-        locManagement = new LocManagement(address(treasureLedger), issuingBank);
+        locManagement = new LocManagement(address(treasureLedger), issuingBank, forwarder);
 
         // Add issuing bank as minter
         vm.prank(owner);

@@ -2,9 +2,11 @@
 
 import { cre, Runner } from "@chainlink/cre-sdk";
 import { createMarketHttpRequester } from "./marketpredictor/createMarketHttpRequester";
+import { settleMarketHttpRequester } from "./marketpredictor/settleMarketHttpRequester";
 import { marketCreatedEventHash } from "./marketpredictor/marketPredictorAbiMapper";
 import { eventMarketCreatedListener } from "./marketpredictor/eventMarketCreatedListener";
 import { createEvmClient, type Config } from "./utils/evmClientFactory";
+import { http } from "viem";
 
 const initWorkflow = (config: Config) => {
   // Initialize HTTP capability
@@ -16,6 +18,7 @@ const initWorkflow = (config: Config) => {
   return [
     // Day 1: HTTP Trigger - Market Creation
     cre.handler(httpTrigger, createMarketHttpRequester),
+    cre.handler(httpTrigger, settleMarketHttpRequester),
 
     // Log Trigger - MarketCreated Event Listener
     cre.handler(

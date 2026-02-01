@@ -13,6 +13,7 @@ contract LocTest is Test {
     address issuingBank = address(1);
     address buyer = address(2);
     address seller = address(3);
+    address forwarder = address(0x15fC6ae953E024d975e77382eEeC56A9101f9F88); // Mock forwarder address
 
     uint256 constant LC_NO = 1001;
     uint256 constant LC_AMOUNT = 10000e18;
@@ -20,7 +21,7 @@ contract LocTest is Test {
     uint256 dateOfExpiry;
 
     function setUp() public {
-        treasureLedger = new TreasureLedger();
+        treasureLedger = new TreasureLedger(forwarder);
         
         dateOfIssue = block.timestamp;
         dateOfExpiry = block.timestamp + 30 days;
