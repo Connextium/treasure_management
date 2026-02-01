@@ -25,6 +25,14 @@ contract LocManagementTest is Test {
         vm.prank(owner);
         locManagement = new LocManagement(address(treasureLedger), issuingBank);
 
+        // Add issuing bank as minter
+        vm.prank(owner);
+        treasureLedger.addMinter(issuingBank);
+
+        // Add LocManagement as minter (since activateLC calls mint)
+        vm.prank(owner);
+        treasureLedger.addMinter(address(locManagement));
+
         // Mint tokens for issuing bank
         vm.prank(owner);
         treasureLedger.mint(issuingBank, LC_AMOUNT * 2);

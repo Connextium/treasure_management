@@ -71,7 +71,7 @@ contract Loc is Ownable {
         uint256 _dateOfExpiry,
         address _treasureLedgerAddress,
         address _issuingBankAddr
-    ) Ownable(_issuingBankAddr) {
+    ) Ownable(msg.sender) {
         require(_buyerAcc != address(0), "Loc: invalid buyer address");
         require(_sellerAcc != address(0), "Loc: invalid seller address");
         require(_treasureLedgerAddress != address(0), "Loc: invalid treasury address");
@@ -133,12 +133,12 @@ contract Loc is Ownable {
      * Requires issuing bank to have approved fund spending by this contract
      * Minting is done by LocManagement before calling this
      */
-    function activateLC() public onlyIssuingBank {
+    function activateLC() public onlyOwner {
         require(locData.status == STATUS_ISSUED, "Loc: LC must be in Issued status");
         require(!isExpired(), "Loc: LC has already expired");
 
         // Verify that issuing bank has approved this contract to spend the LC amount
-        uint256 currentAllowance = treasureLedger.allowance(msg.sender, address(this));
+        uint256 currentAllowance = treasureLedger.allowance(issuingBank, address(this));
         require(currentAllowance >= locData.amount, "Loc: insufficient allowance for LC activation");
 
         // Update status to Active
@@ -151,7 +151,8 @@ contract Loc is Ownable {
      * @dev Settle the LC (only seller can invoke)
      * Transfers the LC amount from issuing bank to the seller (beneficiary)
      */
-    function settleLC() public onlySeller {
+    function settleLC() public {
+        require(msg.sender == locData.sellerAcc || msg.sender == owner(), "Loc: caller is not the seller or owner");
         require(locData.status == STATUS_ACTIVE, "Loc: LC must be in Active status");
         require(!isExpired(), "Loc: LC has expired");
 
@@ -172,10 +173,10 @@ contract Loc is Ownable {
     }
 
     /**
-     * @dev Expire the LC (only issuing bank)
+     * @dev Expire the LC (only owner/LocManagement)
      * If LC is not settled by expiry date, issuing bank can mark it as expired
      */
-    function expireLC() public onlyIssuingBank {
+    function expireLC() public onlyOwner {
         require(locData.status == STATUS_ACTIVE || locData.status == STATUS_ISSUED, "Loc: LC cannot be expired in current status");
         require(isExpired(), "Loc: LC has not yet expired");
 
