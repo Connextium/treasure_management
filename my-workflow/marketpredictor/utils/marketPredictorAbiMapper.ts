@@ -1,8 +1,8 @@
 // my-workflow/marketpredictor/marketPredictorAbi.ts
 
-import MarketPredictorJson from "../../contracts/out/MarketPredictor.sol/MarketPredictor.json";
+import MarketPredictorJson from "../../../contracts/out/MarketPredictor.sol/MarketPredictor.json";
 import { type Abi, toEventSelector } from "viem";
-import { getEvent, getFunction } from "../utils/abiHelpers";
+import { getEvent, getFunction } from "../../utils/abiHelpers";
 
 const fullAbi: Abi = MarketPredictorJson.abi as Abi;
 
