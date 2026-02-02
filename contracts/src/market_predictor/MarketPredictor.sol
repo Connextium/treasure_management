@@ -87,28 +87,37 @@ contract MarketPredictor is ReceiverTemplate {
     /// @param marketId The ID of the market.
     /// @param prediction The prediction (Yes or No).
     function predict(uint256 marketId, Prediction prediction) external payable {
+        _predict(marketId, prediction, msg.sender, msg.value);
+    }
+
+    /// @dev Internal prediction logic for both direct calls and CRE reports
+    /// @param marketId The ID of the market
+    /// @param prediction The prediction (Yes or No)
+    /// @param predictor The address making the prediction
+    /// @param amount The amount being bet
+    function _predict(uint256 marketId, Prediction prediction, address predictor, uint256 amount) internal {
         Market memory m = markets[marketId];
 
         if (m.creator == address(0)) revert MarketDoesNotExist();
         if (m.settled) revert MarketAlreadySettled();
-        if (msg.value == 0) revert InvalidAmount();
+        if (amount == 0) revert InvalidAmount();
 
-        UserPrediction memory userPred = predictions[marketId][msg.sender];
+        UserPrediction memory userPred = predictions[marketId][predictor];
         if (userPred.amount != 0) revert AlreadyPredicted();
 
-        predictions[marketId][msg.sender] = UserPrediction({
-            amount: msg.value,
+        predictions[marketId][predictor] = UserPrediction({
+            amount: amount,
             prediction: prediction,
             claimed: false
         });
 
         if (prediction == Prediction.Yes) {
-            markets[marketId].totalYesPool += msg.value;
+            markets[marketId].totalYesPool += amount;
         } else {
-            markets[marketId].totalNoPool += msg.value;
+            markets[marketId].totalNoPool += amount;
         }
 
-        emit PredictionMade(marketId, msg.sender, prediction, msg.value);
+        emit PredictionMade(marketId, predictor, prediction, amount);
     }
 
     // ================================================================
@@ -173,6 +182,11 @@ contract MarketPredictor is ReceiverTemplate {
                 createMarket(question);
                 return;
             }
+            if (selector == PREDICT_MARKET_SELECTOR) {
+                (uint256 marketId, uint8 predictionValue) = abi.decode(report[4:], (uint256, uint8));
+                _predict(marketId, Prediction(predictionValue), msg.sender, msg.value);
+                return;
+            }
         }
         revert InvalidSelector();
     }
@@ -227,4 +241,5 @@ contract MarketPredictor is ReceiverTemplate {
     /// @dev Function selectors for CRE report routing
     bytes4 private constant SETTLE_MARKET_SELECTOR = bytes4(keccak256("settleMarket(uint256,uint8,uint16)"));
     bytes4 private constant CREATE_MARKET_SELECTOR = bytes4(keccak256("createMarket(string)"));
+    bytes4 private constant PREDICT_MARKET_SELECTOR = bytes4(keccak256("predict(uint256,uint8)"));
 }

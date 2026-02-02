@@ -78,7 +78,7 @@ abstract contract ReceiverTemplate is IReceiver, Ownable {
   function onReport(
     bytes calldata metadata,
     bytes calldata report
-  ) external override {
+  ) external payable override {
     // Security Check 1: Verify caller is the trusted Chainlink Forwarder (if configured)
     if (s_forwarderAddress != address(0) && msg.sender != s_forwarderAddress) {
       revert InvalidSender(msg.sender, s_forwarderAddress);

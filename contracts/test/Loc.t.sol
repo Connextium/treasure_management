@@ -20,6 +20,9 @@ contract LocTest is Test {
     uint256 dateOfIssue;
     uint256 dateOfExpiry;
 
+    // Mock LocManagement registry for testing
+    mapping(uint256 => address) public locContracts;
+
     function setUp() public {
         treasureLedger = new TreasureLedger(forwarder);
         
@@ -35,8 +38,12 @@ contract LocTest is Test {
             dateOfIssue,
             dateOfExpiry,
             address(treasureLedger),
-            issuingBank
+            issuingBank,
+            address(this) // Mock LocManagement address
         );
+
+        // Register LC in mock registry for validation
+        locContracts[LC_NO] = address(loc);
 
         // Mint tokens to issuing bank
         treasureLedger.mint(issuingBank, LC_AMOUNT * 2);
@@ -283,7 +290,8 @@ contract LocTest is Test {
             dateOfIssue,
             dateOfExpiry,
             address(treasureLedger),
-            issuingBank
+            issuingBank,
+            address(this)
         );
     }
 
@@ -297,7 +305,8 @@ contract LocTest is Test {
             dateOfIssue,
             dateOfExpiry,
             address(treasureLedger),
-            issuingBank
+            issuingBank,
+            address(this)
         );
     }
 
@@ -311,7 +320,8 @@ contract LocTest is Test {
             dateOfIssue,
             dateOfExpiry,
             address(0),
-            issuingBank
+            issuingBank,
+            address(this)
         );
     }
 
@@ -325,7 +335,8 @@ contract LocTest is Test {
             dateOfIssue,
             dateOfExpiry,
             address(treasureLedger),
-            address(0)
+            address(0),
+            address(this)
         );
     }
 
@@ -339,7 +350,8 @@ contract LocTest is Test {
             dateOfIssue,
             dateOfExpiry,
             address(treasureLedger),
-            issuingBank
+            issuingBank,
+            address(this)
         );
     }
 
@@ -353,7 +365,8 @@ contract LocTest is Test {
             dateOfIssue,
             dateOfIssue - 1,
             address(treasureLedger),
-            issuingBank
+            issuingBank,
+            address(this)
         );
     }
 
@@ -395,6 +408,175 @@ contract LocTest is Test {
         
         // 5. Verify funds stayed with issuing bank
         assertEq(treasureLedger.balanceOf(seller), 0);
+        assertEq(treasureLedger.balanceOf(issuingBank), LC_AMOUNT * 2);
+    }
+
+    // ================================================================
+    // │           SECURITY TESTS: Registry-Based Validation          │
+    // ================================================================
+
+    function test_ConstructorInvalidLocManagementAddress() public {
+        vm.expectRevert("Loc: invalid LocManagement address");
+        new Loc(
+            LC_NO,
+            buyer,
+            seller,
+            LC_AMOUNT,
+            dateOfIssue,
+            dateOfExpiry,
+            address(treasureLedger),
+            issuingBank,
+            address(0) // Invalid LocManagement address
+        );
+    }
+
+    function test_SettleLCRequiresRegistration() public {
+        // Create a malicious LC with attacker as seller, NOT registered in LocManagement
+        address attacker = address(0x999);
+        uint256 maliciousLcNo = 9999;
+        
+        // Attacker creates their own LC contract
+        Loc maliciousLoc = new Loc(
+            maliciousLcNo,
+            buyer,
+            attacker, // Attacker sets themselves as seller
+            LC_AMOUNT,
+            dateOfIssue,
+            dateOfExpiry,
+            address(treasureLedger),
+            issuingBank,
+            address(this) // Uses same LocManagement address
+        );
+        
+        // NOTE: Attacker does NOT register in locContracts mapping
+        // locContracts[maliciousLcNo] = address(maliciousLoc); // <-- NOT DONE
+        
+        // Approve funds for the malicious LC (simulating issuing bank approving legitimate LC)
+        vm.prank(issuingBank);
+        treasureLedger.approve(address(maliciousLoc), LC_AMOUNT);
+        
+        // Activate the malicious LC
+        vm.prank(address(this)); // Owner (LocManagement) can activate
+        maliciousLoc.activateLC();
+        
+        // Attacker tries to settle and steal funds
+        vm.prank(attacker);
+        vm.expectRevert("Loc: not registered in LocManagement");
+        maliciousLoc.settleLC();
+        
+        // Verify attacker got no funds
+        assertEq(treasureLedger.balanceOf(attacker), 0);
+        assertEq(treasureLedger.balanceOf(issuingBank), LC_AMOUNT * 2); // Funds stay with bank
+    }
+
+    function test_OnlyRegisteredLCCanSettle() public {
+        // Verify legitimate LC IS registered
+        assertEq(locContracts[LC_NO], address(loc));
+        
+        // Activate and settle legitimate LC - should work
+        vm.prank(issuingBank);
+        treasureLedger.approve(address(loc), LC_AMOUNT);
+        loc.activateLC();
+        
+        vm.prank(seller);
+        loc.settleLC(); // Should succeed because it's registered
+        
+        assertEq(loc.getStatus(), "ST");
+        assertEq(treasureLedger.balanceOf(seller), LC_AMOUNT);
+    }
+
+    function test_UnregisteringLCPreventsSettlement() public {
+        // Setup: Activate LC first
+        vm.prank(issuingBank);
+        treasureLedger.approve(address(loc), LC_AMOUNT);
+        loc.activateLC();
+        
+        // Simulate unregistering the LC (e.g., malicious registry manipulation)
+        locContracts[LC_NO] = address(0);
+        
+        // Now settlement should fail
+        vm.prank(seller);
+        vm.expectRevert("Loc: not registered in LocManagement");
+        loc.settleLC();
+    }
+
+    function test_WrongRegistryEntryPreventsSettlement() public {
+        // Setup: Activate LC first
+        vm.prank(issuingBank);
+        treasureLedger.approve(address(loc), LC_AMOUNT);
+        loc.activateLC();
+        
+        // Attacker tries to register a different address for the same LC number
+        address fakeLocAddress = address(0xdead);
+        locContracts[LC_NO] = fakeLocAddress;
+        
+        // Now settlement should fail because registry points to different address
+        vm.prank(seller);
+        vm.expectRevert("Loc: not registered in LocManagement");
+        loc.settleLC();
+    }
+
+    function test_LocManagementAddressIsImmutable() public view {
+        // Verify locManagement is set correctly
+        assertEq(loc.locManagement(), address(this));
+        
+        // Note: Being immutable, it cannot be changed after deployment
+        // This test verifies the address is stored correctly
+    }
+
+    function test_MultipleUnregisteredLCsCannotStealFunds() public {
+        // Simulate multiple attackers creating malicious LCs
+        address attacker1 = address(0xBAD1);
+        address attacker2 = address(0xBAD2);
+        
+        Loc maliciousLoc1 = new Loc(
+            8888,
+            buyer,
+            attacker1,
+            LC_AMOUNT / 2,
+            dateOfIssue,
+            dateOfExpiry,
+            address(treasureLedger),
+            issuingBank,
+            address(this)
+        );
+        
+        Loc maliciousLoc2 = new Loc(
+            7777,
+            buyer,
+            attacker2,
+            LC_AMOUNT / 2,
+            dateOfIssue,
+            dateOfExpiry,
+            address(treasureLedger),
+            issuingBank,
+            address(this)
+        );
+        
+        // Approve funds
+        vm.prank(issuingBank);
+        treasureLedger.approve(address(maliciousLoc1), LC_AMOUNT / 2);
+        vm.prank(issuingBank);
+        treasureLedger.approve(address(maliciousLoc2), LC_AMOUNT / 2);
+        
+        // Activate both
+        vm.prank(address(this));
+        maliciousLoc1.activateLC();
+        vm.prank(address(this));
+        maliciousLoc2.activateLC();
+        
+        // Both settlement attempts should fail
+        vm.prank(attacker1);
+        vm.expectRevert("Loc: not registered in LocManagement");
+        maliciousLoc1.settleLC();
+        
+        vm.prank(attacker2);
+        vm.expectRevert("Loc: not registered in LocManagement");
+        maliciousLoc2.settleLC();
+        
+        // Verify no funds stolen
+        assertEq(treasureLedger.balanceOf(attacker1), 0);
+        assertEq(treasureLedger.balanceOf(attacker2), 0);
         assertEq(treasureLedger.balanceOf(issuingBank), LC_AMOUNT * 2);
     }
 }

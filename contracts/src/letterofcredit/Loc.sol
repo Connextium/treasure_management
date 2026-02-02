@@ -5,6 +5,14 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
+ * @title ILocManagement
+ * @dev Interface for LocManagement contract to enable registry validation
+ */
+interface ILocManagement {
+    function locContracts(uint256 locNo) external view returns (address);
+}
+
+/**
  * @title Loc
  * @dev Letter of Credit contract for individual LC settlement
  */
@@ -27,6 +35,7 @@ contract Loc is Ownable {
     LocData public locData;
     IERC20 public treasureLedger;
     address public issuingBank;
+    address public immutable locManagement; // Address of LocManagement contract that created this LC
 
     // Events
     event LocActivated(uint256 indexed locNo, uint256 timestamp);
@@ -61,6 +70,7 @@ contract Loc is Ownable {
      * @param _dateOfExpiry Date of expiry (timestamp)
      * @param _treasureLedgerAddress Address of TreasureLedger contract
      * @param _issuingBankAddr Address of issuing bank
+     * @param _locManagementAddr Address of LocManagement contract
      */
     constructor(
         uint256 _locNo,
@@ -70,12 +80,14 @@ contract Loc is Ownable {
         uint256 _dateOfIssue,
         uint256 _dateOfExpiry,
         address _treasureLedgerAddress,
-        address _issuingBankAddr
+        address _issuingBankAddr,
+        address _locManagementAddr
     ) Ownable(msg.sender) {
         require(_buyerAcc != address(0), "Loc: invalid buyer address");
         require(_sellerAcc != address(0), "Loc: invalid seller address");
         require(_treasureLedgerAddress != address(0), "Loc: invalid treasury address");
         require(_issuingBankAddr != address(0), "Loc: invalid issuing bank address");
+        require(_locManagementAddr != address(0), "Loc: invalid LocManagement address");
         require(_amount > 0, "Loc: amount must be greater than 0");
         require(_dateOfExpiry > _dateOfIssue, "Loc: expiry date must be after issue date");
 
@@ -94,6 +106,7 @@ contract Loc is Ownable {
 
         treasureLedger = IERC20(_treasureLedgerAddress);
         issuingBank = _issuingBankAddr;
+        locManagement = _locManagementAddr;
     }
 
     /**
@@ -152,6 +165,10 @@ contract Loc is Ownable {
      * Transfers the LC amount from issuing bank to the seller (beneficiary)
      */
     function settleLC() public {
+        // Verify this LC was created by legitimate LocManagement
+        require(ILocManagement(locManagement).locContracts(locData.locNo) == address(this), 
+                "Loc: not registered in LocManagement");
+     
         require(msg.sender == locData.sellerAcc || msg.sender == owner(), "Loc: caller is not the seller or owner");
         require(locData.status == STATUS_ACTIVE, "Loc: LC must be in Active status");
         require(!isExpired(), "Loc: LC has expired");

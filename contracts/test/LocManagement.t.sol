@@ -46,7 +46,6 @@ contract LocManagementTest is Test {
         vm.prank(issuingBank);
         locManagement.issueLC(LC_NO, buyer, seller, LC_AMOUNT, dateOfIssue, dateOfExpiry);
 
-        assertTrue(locManagement.locExists(LC_NO));
         address locAddress = locManagement.getLocContractAddress(LC_NO);
         assertNotEq(locAddress, address(0));
     }
@@ -56,7 +55,7 @@ contract LocManagementTest is Test {
         uint256 dateOfExpiry = block.timestamp + 30 days;
 
         vm.prank(buyer);
-        vm.expectRevert("LocManagement: caller is not the issuing bank");
+        vm.expectRevert(LocManagement.NotIssuingBank.selector);
         locManagement.issueLC(LC_NO, buyer, seller, LC_AMOUNT, dateOfIssue, dateOfExpiry);
     }
 
@@ -153,22 +152,6 @@ contract LocManagementTest is Test {
         assertEq(locData.amount, LC_AMOUNT);
     }
 
-    function test_GetAllLocNumbers() public {
-        uint256 dateOfIssue = block.timestamp;
-        uint256 dateOfExpiry = block.timestamp + 30 days;
-
-        vm.prank(issuingBank);
-        locManagement.issueLC(1001, buyer, seller, LC_AMOUNT, dateOfIssue, dateOfExpiry);
-
-        vm.prank(issuingBank);
-        locManagement.issueLC(1002, buyer, seller, LC_AMOUNT, dateOfIssue, dateOfExpiry);
-
-        uint256[] memory allLocs = locManagement.getAllLocNumbers();
-        assertEq(allLocs.length, 2);
-        assertEq(allLocs[0], 1001);
-        assertEq(allLocs[1], 1002);
-    }
-
     function test_DuplicateLCNo() public {
         uint256 dateOfIssue = block.timestamp;
         uint256 dateOfExpiry = block.timestamp + 30 days;
@@ -177,7 +160,7 @@ contract LocManagementTest is Test {
         locManagement.issueLC(LC_NO, buyer, seller, LC_AMOUNT, dateOfIssue, dateOfExpiry);
 
         vm.prank(issuingBank);
-        vm.expectRevert("LocManagement: LC already exists");
+        vm.expectRevert(LocManagement.LCAlreadyExists.selector);
         locManagement.issueLC(LC_NO, buyer, seller, LC_AMOUNT, dateOfIssue, dateOfExpiry);
     }
 

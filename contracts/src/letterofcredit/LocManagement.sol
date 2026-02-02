@@ -12,16 +12,22 @@ import {ReceiverTemplate} from "../interfaces/ReceiverTemplate.sol";
  * Features CRE integration via ReceiverTemplate (provides Ownable) for automated LC operations
  */
 contract LocManagement is ReceiverTemplate {
+    // Custom errors
+    error InvalidAddress();
+    error LCAlreadyExists();
+    error LCDoesNotExist();
+    error InvalidAmount();
+    error InvalidDateRange();
+    error NotIssuingBank();
+    error NotAuthorized();
+    error InvalidSelector();
+
     // State variables
-    ITreasureLedger public treasureLedger;
+    ITreasureLedger public immutable treasureLedger;
     address public issuingBank;
 
     // Mapping of LC number to LC contract address
     mapping(uint256 => address) public locContracts;
-    mapping(uint256 => bool) public locExists;
-
-    // Array to track all LC numbers
-    uint256[] public allLocNumbers;
 
     // Events
     event LCIssued(
@@ -29,22 +35,21 @@ contract LocManagement is ReceiverTemplate {
         address indexed buyerAcc,
         address indexed sellerAcc,
         uint256 amount,
-        address locContractAddress,
-        uint256 timestamp
+        address locContractAddress
     );
-    event LCActivated(uint256 indexed locNo, uint256 timestamp);
-    event LCSettled(uint256 indexed locNo, uint256 timestamp);
-    event LCExpired(uint256 indexed locNo, uint256 timestamp);
-    event LCFundsMinted(uint256 indexed locNo, address indexed issuingBank, uint256 amount, uint256 timestamp);
+    event LCActivated(uint256 indexed locNo);
+    event LCSettled(uint256 indexed locNo);
+    event LCExpired(uint256 indexed locNo);
+    event LCFundsMinted(uint256 indexed locNo, address indexed issuingBank, uint256 amount);
 
     // Modifiers
     modifier onlyIssuingBank() {
-        require(msg.sender == issuingBank, "LocManagement: caller is not the issuing bank");
+        if (msg.sender != issuingBank) revert NotIssuingBank();
         _;
     }
 
     modifier locMustExist(uint256 _locNo) {
-        require(locExists[_locNo], "LocManagement: LC does not exist");
+        if (locContracts[_locNo] == address(0)) revert LCDoesNotExist();
         _;
     }
 
@@ -57,8 +62,8 @@ contract LocManagement is ReceiverTemplate {
     constructor(address _treasureLedgerAddress, address _issuingBankAddr, address _forwarderAddress) 
         ReceiverTemplate(_forwarderAddress)
     {
-        require(_treasureLedgerAddress != address(0), "LocManagement: invalid treasury address");
-        require(_issuingBankAddr != address(0), "LocManagement: invalid issuing bank address");
+        if (_treasureLedgerAddress == address(0)) revert InvalidAddress();
+        if (_issuingBankAddr == address(0)) revert InvalidAddress();
 
         treasureLedger = ITreasureLedger(_treasureLedgerAddress);
         issuingBank = _issuingBankAddr;
@@ -81,11 +86,10 @@ contract LocManagement is ReceiverTemplate {
         uint256 _dateOfIssue,
         uint256 _dateOfExpiry
     ) public onlyIssuingBank {
-        require(!locExists[_locNo], "LocManagement: LC already exists");
-        require(_buyerAcc != address(0), "LocManagement: invalid buyer address");
-        require(_sellerAcc != address(0), "LocManagement: invalid seller address");
-        require(_amount > 0, "LocManagement: amount must be greater than 0");
-        require(_dateOfExpiry > _dateOfIssue, "LocManagement: expiry date must be after issue date");
+        if (locContracts[_locNo] != address(0)) revert LCAlreadyExists();
+        if (_buyerAcc == address(0) || _sellerAcc == address(0)) revert InvalidAddress();
+        if (_amount == 0) revert InvalidAmount();
+        if (_dateOfExpiry <= _dateOfIssue) revert InvalidDateRange();
 
         // Create new Loc contract
         Loc locContract = new Loc(
@@ -96,15 +100,14 @@ contract LocManagement is ReceiverTemplate {
             _dateOfIssue,
             _dateOfExpiry,
             address(treasureLedger),
-            issuingBank
+            issuingBank,
+            address(this) // Pass LocManagement address for registry validation
         );
 
         // Store reference to Loc contract
         locContracts[_locNo] = address(locContract);
-        locExists[_locNo] = true;
-        allLocNumbers.push(_locNo);
 
-        emit LCIssued(_locNo, _buyerAcc, _sellerAcc, _amount, address(locContract), block.timestamp);
+        emit LCIssued(_locNo, _buyerAcc, _sellerAcc, _amount, address(locContract));
     }
 
     /**
@@ -118,11 +121,11 @@ contract LocManagement is ReceiverTemplate {
         
         // Mint the LC amount to issuing bank
         treasureLedger.mint(msg.sender, locData.amount);
-        emit LCFundsMinted(_locNo, msg.sender, locData.amount, block.timestamp);
+        emit LCFundsMinted(_locNo, msg.sender, locData.amount);
         
         // Activate the LC contract (validates allowance)
         locContract.activateLC();
-        emit LCActivated(_locNo, block.timestamp);
+        emit LCActivated(_locNo);
     }
 
     /**
@@ -135,13 +138,10 @@ contract LocManagement is ReceiverTemplate {
         Loc.LocData memory locData = locContract.getLocData();
         
         // Verify caller is the seller or contract owner
-        require(
-            msg.sender == locData.sellerAcc || msg.sender == owner(),
-            "LocManagement: caller is not authorized to settle"
-        );
+        if (msg.sender != locData.sellerAcc && msg.sender != owner()) revert NotAuthorized();
         
         locContract.settleLC();
-        emit LCSettled(_locNo, block.timestamp);
+        emit LCSettled(_locNo);
     }
 
     /**
@@ -152,7 +152,7 @@ contract LocManagement is ReceiverTemplate {
     function expireLC(uint256 _locNo) public onlyIssuingBank locMustExist(_locNo) {
         Loc locContract = Loc(locContracts[_locNo]);
         locContract.expireLC();
-        emit LCExpired(_locNo, block.timestamp);
+        emit LCExpired(_locNo);
     }
 
     /**
@@ -182,24 +182,10 @@ contract LocManagement is ReceiverTemplate {
     }
 
     /**
-     * @dev Get all LC numbers
-     */
-    function getAllLocNumbers() public view returns (uint256[] memory) {
-        return allLocNumbers;
-    }
-
-    /**
-     * @dev Get total number of LCs
-     */
-    function getTotalLocCount() public view returns (uint256) {
-        return allLocNumbers.length;
-    }
-
-    /**
      * @dev Update issuing bank address (only owner)
      */
     function setIssuingBank(address _newIssuingBank) public onlyOwner {
-        require(_newIssuingBank != address(0), "LocManagement: invalid issuing bank address");
+        if (_newIssuingBank == address(0)) revert InvalidAddress();
         issuingBank = _newIssuingBank;
     }
 
@@ -244,7 +230,7 @@ contract LocManagement is ReceiverTemplate {
                 return;
             }
         }
-        revert("LocManagement: Invalid selector");
+        revert InvalidSelector();
     }
 
     /// @dev Function selectors for CRE report routing
