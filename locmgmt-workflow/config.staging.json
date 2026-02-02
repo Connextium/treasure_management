@@ -1,0 +1,10 @@
+{
+  "evms": [
+    {
+      "locManagementAddress": "0xB48698F8bD0EF69d32CFf07196eb0a8A2F971a25",
+      "chainSelectorName": "ethereum-testnet-sepolia",
+      "treasureLedgerAddress": "0x38745011Fc940e9C411dA5774447a6bc0a08C85A",
+      "gasLimit": "500000"
+    }
+  ]
+}

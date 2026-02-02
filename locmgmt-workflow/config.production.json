@@ -1,0 +1,10 @@
+{
+  "evms": [
+    {
+      "locManagementAddress": "0x0000000000000000000000000000000000000000",
+      "chainSelectorName": "ethereum-mainnet",
+      "treasureLedgerAddress": "0x0000000000000000000000000000000000000000",
+      "gasLimit": "500000"
+    }
+  ]
+}
