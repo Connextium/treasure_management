@@ -1,6 +1,7 @@
 # Environment Variables
 .claude
 *.env
+*.env.prv
 .env.local
 .env.*.local
 secrets.yaml

@@ -8,7 +8,7 @@ import {
   TxStatus,
   decodeJson,
 } from "@chainlink/cre-sdk";
-import { encodeAbiParameters, parseAbiParameters, keccak256, parseEther } from "viem";
+import { encodeAbiParameters, parseAbiParameters, keccak256, parseEther, toHex } from "viem";
 import { createEvmClient, type Config } from "../utils/evmClientFactory";
 
 interface PredictMarketPayload {
@@ -18,11 +18,10 @@ interface PredictMarketPayload {
 }
 
 // Function signature for prediction routing
-const PREDICT_MARKET_SIGNATURE = "predict(uint256,uint8)";
-const PREDICT_MARKET_SELECTOR = keccak256(Buffer.from(PREDICT_MARKET_SIGNATURE)).slice(0, 10); // 4 bytes = "0x" + 8 hex chars
+const PREDICT_MARKET_SELECTOR = keccak256(toHex("predict(uint256,uint8)")).slice(0, 10);
 
 // ABI parameters for predict: (uint256 marketId, uint8 prediction)
-const PREDICT_MARKET_PARAMS = parseAbiParameters("uint256 marketId, uint8 prediction");
+const PREDICT_MARKET_PARAMS = parseAbiParameters("uint256, uint8");
 
 export function predictMarketHttpRequester(runtime: Runtime<Config>, payload: HTTPPayload): string {
   runtime.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -78,8 +77,8 @@ export function predictMarketHttpRequester(runtime: Runtime<Config>, payload: HT
     // ─────────────────────────────────────────────────────────────
     // Step 4: Add function selector prefix for routing
     // ─────────────────────────────────────────────────────────────
-    const prefixedData = PREDICT_MARKET_SELECTOR + predictionData.slice(2);
-    runtime.log(`[Step 4] Adding function selector: ${PREDICT_MARKET_SELECTOR}`);
+    const prefixedData = (PREDICT_MARKET_SELECTOR + predictionData.slice(2)) as `0x${string}`;
+    runtime.log(`[Step 4] Function selector: ${PREDICT_MARKET_SELECTOR}`);
 
     // ─────────────────────────────────────────────────────────────
     // Step 5: Generate CRE report with encoded data

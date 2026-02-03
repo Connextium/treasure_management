@@ -31,6 +31,14 @@ forge create src/letterofcredit/LocManagement.sol:LocManagement \
 0xFbbD48bF74507c1bb67893B442f736deFc443BAE
 
 
+cd my-workflow
+
+bun install          
+# ensures cre-setup runs via postinstall
+
+bunx cre workflow simulate --target staging-settings
+
+
 
 
 

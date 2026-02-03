@@ -6,7 +6,7 @@ import {
   TxStatus,
   decodeJson,
 } from "@chainlink/cre-sdk";
-import { encodeAbiParameters, parseAbiParameters, keccak256, encodeFunctionData } from "viem";
+import { encodeAbiParameters, parseAbiParameters, keccak256, toHex } from "viem";
 import { createEvmClient, type Config } from "../utils/evmClientFactory";
 
 interface SettleMarketPayload {
@@ -16,11 +16,10 @@ interface SettleMarketPayload {
 }
 
 // Function signature for settlement routing
-const SETTLE_MARKET_SIGNATURE = "settleMarket(uint256,uint8,uint16)";
-const SETTLE_MARKET_SELECTOR = keccak256(Buffer.from(SETTLE_MARKET_SIGNATURE)).slice(0, 10); // 4 bytes = "0x" + 8 hex chars
+const SETTLE_MARKET_SELECTOR = keccak256(toHex("settleMarket(uint256,uint8,uint16)")).slice(0, 10);
 
 // ABI parameters for settlement: (uint256 marketId, Prediction outcome, uint16 confidence)
-const SETTLE_MARKET_PARAMS = parseAbiParameters("uint256 marketId, uint8 outcome, uint16 confidence");
+const SETTLE_MARKET_PARAMS = parseAbiParameters("uint256, uint8, uint16");
 
 export function settleMarketHttpRequester(runtime: Runtime<Config>, payload: HTTPPayload): string {
   runtime.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -47,9 +46,9 @@ export function settleMarketHttpRequester(runtime: Runtime<Config>, payload: HTT
       inputData.confidence,
     ]);
 
-    // Add function selector for routing instead of hardcoded prefix
-    const prefixedData = SETTLE_MARKET_SELECTOR + settlementData.slice(2);
-    runtime.log(`[Step 3] Adding function selector: ${SETTLE_MARKET_SELECTOR}`);
+    // Add function selector for routing
+    const prefixedData = (SETTLE_MARKET_SELECTOR + settlementData.slice(2)) as `0x${string}`;
+    runtime.log(`[Step 3] Function selector: ${SETTLE_MARKET_SELECTOR}`);
 
     // Generate CRE report with prefixed data
     const reportResponse = runtime
