@@ -38,6 +38,7 @@ contract Loc is Ownable {
     address public immutable locManagement; // Address of LocManagement contract that created this LC
 
     // Events
+    event LocApproved(uint256 indexed locNo, uint256 timestamp);
     event LocActivated(uint256 indexed locNo, uint256 timestamp);
     event LocSettled(uint256 indexed locNo, address indexed beneficiary, uint256 amount, uint256 timestamp);
     event LocExpired(uint256 indexed locNo, uint256 timestamp);
@@ -45,6 +46,7 @@ contract Loc is Ownable {
 
     // Status constants
     bytes2 constant STATUS_ISSUED = "IS";
+    bytes2 constant STATUS_APPROVED = "AP";
     bytes2 constant STATUS_ACTIVE = "AC";
     bytes2 constant STATUS_EXPIRED = "EX";
     bytes2 constant STATUS_SETTLED = "ST";
@@ -128,6 +130,7 @@ contract Loc is Ownable {
      */
     function getStatusString() public view returns (string memory) {
         if (locData.status == STATUS_ISSUED) return "Issued";
+        if (locData.status == STATUS_APPROVED) return "Approved";
         if (locData.status == STATUS_ACTIVE) return "Active";
         if (locData.status == STATUS_EXPIRED) return "Expired";
         if (locData.status == STATUS_SETTLED) return "Settled";
@@ -142,40 +145,32 @@ contract Loc is Ownable {
     }
 
     /**
-     * @dev Activate the LC (only issuing bank)
-     * Requires issuing bank to have approved fund spending by this contract
-     * Minting is done by LocManagement before calling this
+     * @dev Set LC status (only owner/LocManagement)
+     * @param _status New status
      */
-    function activateLC() public onlyOwner {
-        require(locData.status == STATUS_ISSUED, "Loc: LC must be in Issued status");
-        require(!isExpired(), "Loc: LC has already expired");
-
-        // Verify that issuing bank has approved this contract to spend the LC amount
-        uint256 currentAllowance = treasureLedger.allowance(issuingBank, address(this));
-        require(currentAllowance >= locData.amount, "Loc: insufficient allowance for LC activation");
-
-        // Update status to Active
-        locData.status = STATUS_ACTIVE;
-
-        emit LocActivated(locData.locNo, block.timestamp);
+    function setStatus(bytes2 _status) external onlyOwner {
+        locData.status = _status;
+        
+        if (_status == STATUS_APPROVED) {
+            emit LocApproved(locData.locNo, block.timestamp);
+        } else if (_status == STATUS_ACTIVE) {
+            emit LocActivated(locData.locNo, block.timestamp);
+        } else if (_status == STATUS_EXPIRED) {
+            emit LocExpired(locData.locNo, block.timestamp);
+        }
     }
 
     /**
      * @dev Settle the LC (only seller can invoke)
      * Transfers the LC amount from issuing bank to the seller (beneficiary)
      */
-    function settleLC() public {
+    function settleLC() public onlySeller {
         // Verify this LC was created by legitimate LocManagement
         require(ILocManagement(locManagement).locContracts(locData.locNo) == address(this), 
                 "Loc: not registered in LocManagement");
      
-        require(msg.sender == locData.sellerAcc || msg.sender == owner(), "Loc: caller is not the seller or owner");
         require(locData.status == STATUS_ACTIVE, "Loc: LC must be in Active status");
         require(!isExpired(), "Loc: LC has expired");
-
-        // Verify issuing bank has approved sufficient amount
-        uint256 currentAllowance = treasureLedger.allowance(issuingBank, address(this));
-        require(currentAllowance >= locData.amount, "Loc: insufficient allowance to settle");
 
         // Update status to Settled
         locData.status = STATUS_SETTLED;
@@ -187,20 +182,6 @@ contract Loc is Ownable {
 
         emit LocSettled(locData.locNo, locData.sellerAcc, locData.amount, block.timestamp);
         emit FundsReleased(locData.sellerAcc, locData.amount, block.timestamp);
-    }
-
-    /**
-     * @dev Expire the LC (only owner/LocManagement)
-     * If LC is not settled by expiry date, issuing bank can mark it as expired
-     */
-    function expireLC() public onlyOwner {
-        require(locData.status == STATUS_ACTIVE || locData.status == STATUS_ISSUED, "Loc: LC cannot be expired in current status");
-        require(isExpired(), "Loc: LC has not yet expired");
-
-        // Update status to Expired
-        locData.status = STATUS_EXPIRED;
-
-        emit LocExpired(locData.locNo, block.timestamp);
     }
 
     /**

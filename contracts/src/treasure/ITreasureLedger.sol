@@ -5,8 +5,9 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title ITreasureLedger
- * @dev Interface for TreasureLedger contract with minting capability
+ * @dev Interface for TreasureLedger contract with minting and self-burn capability
  */
 interface ITreasureLedger is IERC20 {
     function mint(address to, uint256 amount) external;
+    function burnFrom(uint256 amount) external;
 }

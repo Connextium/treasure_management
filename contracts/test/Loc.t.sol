@@ -13,7 +13,6 @@ contract LocTest is Test {
     address issuingBank = address(1);
     address buyer = address(2);
     address seller = address(3);
-    address forwarder = address(0x15fC6ae953E024d975e77382eEeC56A9101f9F88); // Mock forwarder address
 
     uint256 constant LC_NO = 1001;
     uint256 constant LC_AMOUNT = 10000e18;
@@ -24,7 +23,7 @@ contract LocTest is Test {
     mapping(uint256 => address) public locContracts;
 
     function setUp() public {
-        treasureLedger = new TreasureLedger(forwarder);
+        treasureLedger = new TreasureLedger();
         
         dateOfIssue = block.timestamp;
         dateOfExpiry = block.timestamp + 30 days;
@@ -44,6 +43,10 @@ contract LocTest is Test {
 
         // Register LC in mock registry for validation
         locContracts[LC_NO] = address(loc);
+
+        // Register and grant this contract (mock LocManagement) ROLE_MINT
+        treasureLedger.addParticipant(address(this));
+        treasureLedger.grantRoles(address(this), treasureLedger.ROLE_MINT());
 
         // Mint tokens to issuing bank
         treasureLedger.mint(issuingBank, LC_AMOUNT * 2);
@@ -80,7 +83,7 @@ contract LocTest is Test {
         treasureLedger.approve(address(loc), LC_AMOUNT);
 
         // Activate LC (only owner can call)
-        loc.activateLC();
+        loc.setStatus("AC");
 
         assertEq(loc.getStatus(), "AC");
         assertEq(loc.getStatusString(), "Active");
@@ -92,42 +95,14 @@ contract LocTest is Test {
 
         vm.prank(issuingBank);
         vm.expectRevert();
-        loc.activateLC();
-    }
-
-    function test_ActivateLCRequiresIssuedStatus() public {
-        vm.prank(issuingBank);
-        treasureLedger.approve(address(loc), LC_AMOUNT);
-
-        loc.activateLC();
-
-        vm.expectRevert("Loc: LC must be in Issued status");
-        loc.activateLC();
-    }
-
-    function test_ActivateLCRequiresNotExpired() public {
-        vm.prank(issuingBank);
-        treasureLedger.approve(address(loc), LC_AMOUNT);
-
-        vm.warp(block.timestamp + 31 days);
-
-        vm.expectRevert("Loc: LC has already expired");
-        loc.activateLC();
-    }
-
-    function test_ActivateLCRequiresSufficientAllowance() public {
-        vm.prank(issuingBank);
-        treasureLedger.approve(address(loc), LC_AMOUNT - 1);
-
-        vm.expectRevert("Loc: insufficient allowance for LC activation");
-        loc.activateLC();
+        loc.setStatus("AC");
     }
 
     function test_SettleLCBySeller() public {
         // Activate LC first
         vm.prank(issuingBank);
         treasureLedger.approve(address(loc), LC_AMOUNT);
-        loc.activateLC();
+        loc.setStatus("AC");
 
         // Seller settles LC
         uint256 sellerBalanceBefore = treasureLedger.balanceOf(seller);
@@ -141,29 +116,13 @@ contract LocTest is Test {
         assertEq(loc.getStatusString(), "Settled");
     }
 
-    function test_SettleLCByOwner() public {
-        // Activate LC first
-        vm.prank(issuingBank);
-        treasureLedger.approve(address(loc), LC_AMOUNT);
-        loc.activateLC();
-
-        // Owner settles LC
-        uint256 sellerBalanceBefore = treasureLedger.balanceOf(seller);
-        
-        loc.settleLC();
-
-        uint256 sellerBalanceAfter = treasureLedger.balanceOf(seller);
-        assertEq(sellerBalanceAfter - sellerBalanceBefore, LC_AMOUNT);
-        assertEq(loc.getStatus(), "ST");
-    }
-
     function test_SettleLCUnauthorized() public {
         vm.prank(issuingBank);
         treasureLedger.approve(address(loc), LC_AMOUNT);
-        loc.activateLC();
+        loc.setStatus("AC");
 
         vm.prank(buyer);
-        vm.expectRevert("Loc: caller is not the seller or owner");
+        vm.expectRevert("Loc: caller is not the seller");
         loc.settleLC();
     }
 
@@ -176,7 +135,7 @@ contract LocTest is Test {
     function test_SettleLCRequiresNotExpired() public {
         vm.prank(issuingBank);
         treasureLedger.approve(address(loc), LC_AMOUNT);
-        loc.activateLC();
+        loc.setStatus("AC");
 
         vm.warp(block.timestamp + 31 days);
 
@@ -188,11 +147,11 @@ contract LocTest is Test {
     function test_ExpireLC() public {
         vm.prank(issuingBank);
         treasureLedger.approve(address(loc), LC_AMOUNT);
-        loc.activateLC();
+        loc.setStatus("AC");
 
         vm.warp(block.timestamp + 31 days);
 
-        loc.expireLC();
+        loc.setStatus("EX");
 
         assertEq(loc.getStatus(), "EX");
         assertEq(loc.getStatusString(), "Expired");
@@ -201,44 +160,21 @@ contract LocTest is Test {
     function test_ExpireLCOnlyOwner() public {
         vm.prank(issuingBank);
         treasureLedger.approve(address(loc), LC_AMOUNT);
-        loc.activateLC();
+        loc.setStatus("AC");
 
         vm.warp(block.timestamp + 31 days);
 
         vm.prank(issuingBank);
         vm.expectRevert();
-        loc.expireLC();
-    }
-
-    function test_ExpireLCRequiresExpired() public {
-        vm.prank(issuingBank);
-        treasureLedger.approve(address(loc), LC_AMOUNT);
-        loc.activateLC();
-
-        vm.expectRevert("Loc: LC has not yet expired");
-        loc.expireLC();
+        loc.setStatus("EX");
     }
 
     function test_ExpireLCFromIssuedStatus() public {
         vm.warp(block.timestamp + 31 days);
 
-        loc.expireLC();
+        loc.setStatus("EX");
 
         assertEq(loc.getStatus(), "EX");
-    }
-
-    function test_ExpireLCInvalidStatus() public {
-        vm.prank(issuingBank);
-        treasureLedger.approve(address(loc), LC_AMOUNT);
-        loc.activateLC();
-
-        vm.prank(seller);
-        loc.settleLC();
-
-        vm.warp(block.timestamp + 31 days);
-
-        vm.expectRevert("Loc: LC cannot be expired in current status");
-        loc.expireLC();
     }
 
     function test_GetAllowance() public {
@@ -377,7 +313,7 @@ contract LocTest is Test {
         // 2. Approve and activate
         vm.prank(issuingBank);
         treasureLedger.approve(address(loc), LC_AMOUNT);
-        loc.activateLC();
+        loc.setStatus("AC");
         assertEq(loc.getStatusString(), "Active");
         
         // 3. Settle
@@ -396,14 +332,14 @@ contract LocTest is Test {
         // 2. Approve and activate
         vm.prank(issuingBank);
         treasureLedger.approve(address(loc), LC_AMOUNT);
-        loc.activateLC();
+        loc.setStatus("AC");
         assertEq(loc.getStatusString(), "Active");
         
         // 3. Warp past expiry
         vm.warp(block.timestamp + 31 days);
         
         // 4. Expire
-        loc.expireLC();
+        loc.setStatus("EX");
         assertEq(loc.getStatusString(), "Expired");
         
         // 5. Verify funds stayed with issuing bank
@@ -451,13 +387,13 @@ contract LocTest is Test {
         // NOTE: Attacker does NOT register in locContracts mapping
         // locContracts[maliciousLcNo] = address(maliciousLoc); // <-- NOT DONE
         
-        // Approve funds for the malicious LC (simulating issuing bank approving legitimate LC)
+        // Approve funds for the malicious LC (simulating LocManagement approving)
         vm.prank(issuingBank);
         treasureLedger.approve(address(maliciousLoc), LC_AMOUNT);
         
         // Activate the malicious LC
         vm.prank(address(this)); // Owner (LocManagement) can activate
-        maliciousLoc.activateLC();
+        maliciousLoc.setStatus("AC");
         
         // Attacker tries to settle and steal funds
         vm.prank(attacker);
@@ -476,7 +412,7 @@ contract LocTest is Test {
         // Activate and settle legitimate LC - should work
         vm.prank(issuingBank);
         treasureLedger.approve(address(loc), LC_AMOUNT);
-        loc.activateLC();
+        loc.setStatus("AC");
         
         vm.prank(seller);
         loc.settleLC(); // Should succeed because it's registered
@@ -489,7 +425,7 @@ contract LocTest is Test {
         // Setup: Activate LC first
         vm.prank(issuingBank);
         treasureLedger.approve(address(loc), LC_AMOUNT);
-        loc.activateLC();
+        loc.setStatus("AC");
         
         // Simulate unregistering the LC (e.g., malicious registry manipulation)
         locContracts[LC_NO] = address(0);
@@ -504,7 +440,7 @@ contract LocTest is Test {
         // Setup: Activate LC first
         vm.prank(issuingBank);
         treasureLedger.approve(address(loc), LC_AMOUNT);
-        loc.activateLC();
+        loc.setStatus("AC");
         
         // Attacker tries to register a different address for the same LC number
         address fakeLocAddress = address(0xdead);
@@ -561,9 +497,9 @@ contract LocTest is Test {
         
         // Activate both
         vm.prank(address(this));
-        maliciousLoc1.activateLC();
+        maliciousLoc1.setStatus("AC");
         vm.prank(address(this));
-        maliciousLoc2.activateLC();
+        maliciousLoc2.setStatus("AC");
         
         // Both settlement attempts should fail
         vm.prank(attacker1);

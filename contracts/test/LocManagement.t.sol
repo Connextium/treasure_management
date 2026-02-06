@@ -14,25 +14,38 @@ contract LocManagementTest is Test {
     address buyer = address(2);
     address seller = address(3);
     address owner = address(4);
-    address forwarder = address(0x15fC6ae953E024d975e77382eEeC56A9101f9F88); // Mock forwarder address
+    address admin = address(5);
 
     uint256 constant LC_AMOUNT = 10000e18;
     uint256 constant LC_NO = 1001;
 
     function setUp() public {
         vm.prank(owner);
-        treasureLedger = new TreasureLedger(forwarder);
+        treasureLedger = new TreasureLedger();
 
+        // Set admin for treasureLedger
         vm.prank(owner);
-        locManagement = new LocManagement(address(treasureLedger), issuingBank, forwarder);
+        treasureLedger.setAdmin(admin);
 
-        // Add issuing bank as minter
-        vm.prank(owner);
-        treasureLedger.addMinter(issuingBank);
+        // Cache role constants (avoid vm.prank being consumed by getter calls)
+        uint8 roleMint = treasureLedger.ROLE_MINT();
 
-        // Add LocManagement as minter (since activateLC calls mint)
-        vm.prank(owner);
-        treasureLedger.addMinter(address(locManagement));
+        // Register and grant issuing bank ROLE_MINT (external participant)
+        vm.prank(admin);
+        treasureLedger.addParticipant(issuingBank);
+        vm.prank(admin);
+        treasureLedger.grantRoles(issuingBank, roleMint);
+
+        // Create LocManagement via TreasureLedger factory
+        vm.prank(issuingBank);
+        address locMgmtAddr = treasureLedger.createLocManagement(issuingBank);
+        locManagement = LocManagement(locMgmtAddr);
+
+        // Register and grant LocManagement ROLE_MINT (internal operator)
+        vm.prank(admin);
+        treasureLedger.addParticipant(address(locManagement));
+        vm.prank(admin);
+        treasureLedger.grantRoles(address(locManagement), roleMint);
 
         // Mint tokens for issuing bank
         vm.prank(owner);
@@ -69,13 +82,13 @@ contract LocManagementTest is Test {
 
         address locAddress = locManagement.getLocContractAddress(LC_NO);
 
-        // Approve funds for LC contract
+        // Approve LC
         vm.prank(issuingBank);
-        treasureLedger.approve(locAddress, LC_AMOUNT);
+        locManagement.approveLC(LC_NO);
 
-        // Activate LC
+        // Activate LC via TreasureLedger
         vm.prank(issuingBank);
-        locManagement.activateLC(LC_NO);
+        treasureLedger.activateLoc(LC_NO);
 
         Loc locContract = Loc(locAddress);
         assertEq(locContract.getStatus(), "AC");
@@ -92,22 +105,23 @@ contract LocManagementTest is Test {
 
         address locAddress = locManagement.getLocContractAddress(LC_NO);
 
-        // Approve and activate LC
+        // Approve LC
         vm.prank(issuingBank);
-        treasureLedger.approve(locAddress, LC_AMOUNT);
+        locManagement.approveLC(LC_NO);
 
+        // Activate LC via TreasureLedger
         vm.prank(issuingBank);
-        locManagement.activateLC(LC_NO);
+        treasureLedger.activateLoc(LC_NO);
 
-        // Settle LC (seller initiates)
+        // Settle LC directly on Loc contract (seller initiates)
         uint256 sellerBalanceBefore = treasureLedger.balanceOf(seller);
+        Loc locContract = Loc(locAddress);
         vm.prank(seller);
-        locManagement.settleLC(LC_NO);
+        locContract.settleLC();
 
         uint256 sellerBalanceAfter = treasureLedger.balanceOf(seller);
         assertEq(sellerBalanceAfter - sellerBalanceBefore, LC_AMOUNT);
 
-        Loc locContract = Loc(locAddress);
         assertEq(locContract.getStatus(), "ST");
     }
 
@@ -121,11 +135,13 @@ contract LocManagementTest is Test {
 
         address locAddress = locManagement.getLocContractAddress(LC_NO);
 
+        // Approve LC
         vm.prank(issuingBank);
-        treasureLedger.approve(locAddress, LC_AMOUNT);
+        locManagement.approveLC(LC_NO);
 
+        // Activate LC via TreasureLedger
         vm.prank(issuingBank);
-        locManagement.activateLC(LC_NO);
+        treasureLedger.activateLoc(LC_NO);
 
         // Fast forward time past expiry
         vm.warp(block.timestamp + 2 days);
@@ -162,14 +178,5 @@ contract LocManagementTest is Test {
         vm.prank(issuingBank);
         vm.expectRevert(LocManagement.LCAlreadyExists.selector);
         locManagement.issueLC(LC_NO, buyer, seller, LC_AMOUNT, dateOfIssue, dateOfExpiry);
-    }
-
-    function test_SetIssuingBank() public {
-        address newIssuingBank = address(5);
-
-        vm.prank(owner);
-        locManagement.setIssuingBank(newIssuingBank);
-
-        assertEq(locManagement.issuingBank(), newIssuingBank);
     }
 }
