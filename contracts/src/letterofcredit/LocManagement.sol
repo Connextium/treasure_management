@@ -3,6 +3,7 @@ pragma solidity ^0.8.13;
 
 import "./Loc.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "../interfaces/ReceiverTemplate.sol";
 import "../treasure/ITreasureLedger.sol";
 
 /**
@@ -10,7 +11,7 @@ import "../treasure/ITreasureLedger.sol";
  * @dev Manages the creation, activation, settlement, and expiration of Letters of Credit
  * Each LocManagement is bound to a specific issuing bank (immutable)
  */
-contract LocManagement is Ownable {
+contract LocManagement is ReceiverTemplate {
     // Custom errors
     error InvalidAddress();
     error LCAlreadyExists();
@@ -61,18 +62,109 @@ contract LocManagement is Ownable {
      * @dev Initialize LocManagement contract
      * @param _treasureLedgerAddress Address of TreasureLedger contract
      * @param _issuingBankAddr Address of issuing bank (immutable)
+     * @param _forwarderAddress Address of the Chainlink Forwarder contract (for CRE)
      */
     constructor(
         address _treasureLedgerAddress,
-        address _issuingBankAddr
-    )
-        Ownable(msg.sender)
-    {
+        address _issuingBankAddr,
+        address _forwarderAddress
+    ) ReceiverTemplate(_forwarderAddress) {
         if (_treasureLedgerAddress == address(0)) revert InvalidAddress();
         if (_issuingBankAddr == address(0)) revert InvalidAddress();
 
         treasureLedger = ITreasureLedger(_treasureLedgerAddress);
         issuingBank = _issuingBankAddr;
+    }
+
+    // --- CRE Adapter Selectors ---
+    bytes4 private constant ISSUE_LC_SELECTOR = bytes4(keccak256("issueLC(uint256,address,address,uint256,uint256,uint256)"));
+    bytes4 private constant APPROVE_LC_SELECTOR = bytes4(keccak256("approveLC(uint256)"));
+    bytes4 private constant SETTLE_LC_SELECTOR = bytes4(keccak256("settleLC(uint256)"));
+    bytes4 private constant EXPIRE_LC_SELECTOR = bytes4(keccak256("expireLC(uint256)"));
+
+    /**
+     * @dev CRE entry point: routes CRE workflow calls to the correct method
+     * @param report Encoded CRE report (selector + params)
+     */
+    function _processReport(bytes calldata report) internal override {
+        require(report.length >= 4, "Invalid report length");
+        bytes4 selector = bytes4(report[0:4]);
+        if (selector == ISSUE_LC_SELECTOR) {
+            (uint256 locNo, address buyerAcc, address sellerAcc, uint256 amount, uint256 dateOfIssue, uint256 dateOfExpiry) = abi.decode(report[4:], (uint256, address, address, uint256, uint256, uint256));
+            // Call internal logic, bypassing onlyIssuingBank
+            _issueLCFromCRE(locNo, buyerAcc, sellerAcc, amount, dateOfIssue, dateOfExpiry);
+            return;
+        }
+        if (selector == APPROVE_LC_SELECTOR) {
+            uint256 locNo = abi.decode(report[4:], (uint256));
+            _approveLCFromCRE(locNo);
+            return;
+        }
+        if (selector == SETTLE_LC_SELECTOR) {
+            uint256 locNo = abi.decode(report[4:], (uint256));
+            _settleLCFromCRE(locNo);
+            return;
+        }
+        if (selector == EXPIRE_LC_SELECTOR) {
+            uint256 locNo = abi.decode(report[4:], (uint256));
+            _expireLCFromCRE(locNo);
+            return;
+        }
+        revert("Invalid CRE selector");
+    }
+
+    // --- Internal CRE logic wrappers (bypass onlyIssuingBank, onlyTreasure, etc. as needed) ---
+    function _issueLCFromCRE(
+        uint256 _locNo,
+        address _buyerAcc,
+        address _sellerAcc,
+        uint256 _amount,
+        uint256 _dateOfIssue,
+        uint256 _dateOfExpiry
+    ) internal {
+        if (locContracts[_locNo] != address(0)) revert LCAlreadyExists();
+        if (_buyerAcc == address(0) || _sellerAcc == address(0)) revert InvalidAddress();
+        if (_amount == 0) revert InvalidAmount();
+        if (_dateOfExpiry <= _dateOfIssue) revert InvalidDateRange();
+        Loc locContract = new Loc(
+            _locNo,
+            _buyerAcc,
+            _sellerAcc,
+            _amount,
+            _dateOfIssue,
+            _dateOfExpiry,
+            address(treasureLedger),
+            issuingBank,
+            address(this)
+        );
+        locContracts[_locNo] = address(locContract);
+        emit LCIssued(_locNo, _buyerAcc, _sellerAcc, _amount, address(locContract));
+    }
+
+    function _approveLCFromCRE(uint256 _locNo) internal {
+        Loc locContract = Loc(locContracts[_locNo]);
+        Loc.LocData memory locData = locContract.getLocData();
+        require(locData.status == "IS", "LocManagement: LC must be in Issued status");
+        require(block.timestamp <= locData.dateOfExpiry, "LocManagement: LC has expired");
+        locContract.setStatus("AP");
+        emit LCApproved(_locNo);
+    }
+
+    function _settleLCFromCRE(uint256 _locNo) internal {
+        Loc locContract = Loc(locContracts[_locNo]);
+        Loc.LocData memory locData = locContract.getLocData();
+        // For CRE, allow any authorized workflow to settle (optionally add more checks)
+        locContract.settleLC();
+        emit LCSettled(_locNo);
+    }
+
+    function _expireLCFromCRE(uint256 _locNo) internal {
+        Loc locContract = Loc(locContracts[_locNo]);
+        Loc.LocData memory locData = locContract.getLocData();
+        require(locData.status == "IS" || locData.status == "AC", "LocManagement: LC cannot be expired in current status");
+        require(block.timestamp > locData.dateOfExpiry, "LocManagement: LC has not yet expired");
+        locContract.setStatus("EX");
+        emit LCExpired(_locNo);
     }
 
     /**

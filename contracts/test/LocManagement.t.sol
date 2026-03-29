@@ -38,7 +38,8 @@ contract LocManagementTest is Test {
 
         // Create LocManagement via TreasureLedger factory
         vm.prank(issuingBank);
-        address locMgmtAddr = treasureLedger.createLocManagement(issuingBank);
+        // Pass both required arguments to createLocManagement (e.g., issuingBank and owner)
+        address locMgmtAddr = treasureLedger.createLocManagement(issuingBank, owner);
         locManagement = LocManagement(locMgmtAddr);
 
         // Register and grant LocManagement ROLE_MINT (internal operator)

@@ -362,13 +362,14 @@ contract TreasureLedger is ITreasureLedger, ERC20, ERC20Burnable, ERC20Pausable,
      * @param _issuingBank Address of the issuing bank
      * @return Address of the newly created LocManagement contract
      */
-    function createLocManagement(address _issuingBank) external onlyParticipant returns (address) {
+    function createLocManagement(address _issuingBank, address _forwarderAddress) external onlyParticipant returns (address) {
         require(_issuingBank != address(0), "TreasureLedger: zero address");
 
         // Deploy new LocManagement (immutably bound to issuing bank)
         LocManagement locMgmt = new LocManagement(
             address(this),
-            _issuingBank
+            _issuingBank,
+            _forwarderAddress
         );
 
         address locMgmtAddr = address(locMgmt);
