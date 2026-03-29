@@ -50,3 +50,23 @@ cast send 0xB48698F8bD0EF69d32CFf07196eb0a8A2F971a25 \
 cast call 0xB48698F8bD0EF69d32CFf07196eb0a8A2F971a25 \
   "getLocStatus(uint256)" 1002 \
   --rpc-url https://ethereum-sepolia-rpc.publicnode.com
+
+
+Others
+
+cast send $MARKET_ADDRESS \
+  "predict(uint256,uint8)" 1 0 \
+  --value 0.001ether \
+  --rpc-url "https://ethereum-sepolia-rpc.publicnode.com" \
+  --private-key $CRE_ETH_PRIVATE_KEY
+
+
+cast send $MARKET_ADDRESS \
+  "requestSettlement(uint256)" \
+  0 \
+  --rpc-url "https://ethereum-sepolia-rpc.publicnode.com" \
+  --private-key $CRE_ETH_PRIVATE_KEY
+
+
+
+

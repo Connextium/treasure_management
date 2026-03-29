@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
+import "./ITreasureLedger.sol";
 import "../letterofcredit/LocManagement.sol";
 
 
@@ -18,8 +19,9 @@ import "../letterofcredit/LocManagement.sol";
  * - Pausable: contract can be paused by owner
  * - Permit: gas-less approvals via EIP-2612
  * - Bitmask-based participant role model (ROLE_MINT)
+ * - Implements ITreasureLedger interface for standardized minting and burning
  */
-contract TreasureLedger is ERC20, ERC20Burnable, ERC20Pausable, ERC20Permit, Ownable {
+contract TreasureLedger is ITreasureLedger, ERC20, ERC20Burnable, ERC20Pausable, ERC20Permit, Ownable {
     // ================================================================
     // │                    Role-Based Access Control                   │
     // ================================================================
@@ -93,10 +95,11 @@ contract TreasureLedger is ERC20, ERC20Burnable, ERC20Pausable, ERC20Permit, Own
 
     /**
      * @dev Mint new tokens (only ROLE_MINT participants)
+     * Implements ITreasureLedger.mint
      * @param to Recipient address
      * @param amount Token amount to mint
      */
-    function mint(address to, uint256 amount) public onlyRole(ROLE_MINT) {
+    function mint(address to, uint256 amount) external onlyRole(ROLE_MINT) {
         require(to != address(0), "TreasureLedger: mint to zero address");
         require(amount > 0, "TreasureLedger: mint amount must be greater than 0");
 
@@ -107,9 +110,10 @@ contract TreasureLedger is ERC20, ERC20Burnable, ERC20Pausable, ERC20Permit, Own
     /**
      * @dev Burn tokens from caller's account (only ROLE_MINT participants)
      * Participants can burn their own tokens to reduce supply.
+     * Implements ITreasureLedger.burnFrom
      * @param amount Token amount to burn
      */
-    function burnFrom(uint256 amount) public onlyRole(ROLE_MINT) {
+    function burnFrom(uint256 amount) external onlyRole(ROLE_MINT) {
         require(amount > 0, "TreasureLedger: burn amount must be greater than 0");
         require(balanceOf(msg.sender) >= amount, "TreasureLedger: insufficient balance");
 
@@ -125,7 +129,7 @@ contract TreasureLedger is ERC20, ERC20Burnable, ERC20Pausable, ERC20Permit, Own
      * @param spender Address allowed to spend tokens
      * @param amount Token amount approved
      */
-    function approve(address spender, uint256 amount) public override returns (bool) {
+    function approve(address spender, uint256 amount) public override(ERC20, IERC20) returns (bool) {
         require(spender != address(0), "TreasureLedger: approve to zero address");
         require(msg.sender != spender, "TreasureLedger: approve to self");
         require(
@@ -177,7 +181,7 @@ contract TreasureLedger is ERC20, ERC20Burnable, ERC20Pausable, ERC20Permit, Own
      * @param to Recipient address
      * @param amount Token amount to transfer
      */
-    function transfer(address to, uint256 amount) public override returns (bool) {
+    function transfer(address to, uint256 amount) public override(ERC20, IERC20) returns (bool) {
         require(to != address(0), "TreasureLedger: transfer to zero address");
         require(amount > 0, "TreasureLedger: transfer amount must be greater than 0");
         require(balanceOf(msg.sender) >= amount, "TreasureLedger: insufficient balance");
@@ -193,7 +197,7 @@ contract TreasureLedger is ERC20, ERC20Burnable, ERC20Pausable, ERC20Permit, Own
      * @param to Recipient address
      * @param amount Token amount to transfer
      */
-    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+    function transferFrom(address from, address to, uint256 amount) public override(ERC20, IERC20) returns (bool) {
         require(from != address(0), "TreasureLedger: transfer from zero address");
         require(to != address(0), "TreasureLedger: transfer to zero address");
         require(amount > 0, "TreasureLedger: transfer amount must be greater than 0");
@@ -209,14 +213,14 @@ contract TreasureLedger is ERC20, ERC20Burnable, ERC20Pausable, ERC20Permit, Own
     /**
      * @dev Pause the contract (only owner)
      */
-    function pause() public onlyOwner {
+    function pause() external onlyOwner {
         _pause();
     }
 
     /**
      * @dev Unpause the contract (only owner)
      */
-    function unpause() public onlyOwner {
+    function unpause() external onlyOwner {
         _unpause();
     }
 
@@ -228,7 +232,7 @@ contract TreasureLedger is ERC20, ERC20Burnable, ERC20Pausable, ERC20Permit, Own
      * @dev Set admin address (only owner)
      * @param _newAdmin New admin address
      */
-    function setAdmin(address _newAdmin) public onlyOwner {
+    function setAdmin(address _newAdmin) external onlyOwner {
         require(_newAdmin != address(0), "TreasureLedger: zero address");
         address oldAdmin = admin;
         admin = _newAdmin;
@@ -243,7 +247,7 @@ contract TreasureLedger is ERC20, ERC20Burnable, ERC20Pausable, ERC20Permit, Own
      * @dev Register a new participant (only admin)
      * @param account Participant address to register
      */
-    function addParticipant(address account) public onlyAdmin {
+    function addParticipant(address account) external onlyAdmin {
         require(account != address(0), "TreasureLedger: zero address");
         require(!isParticipant(account), "TreasureLedger: already a participant");
         participants[account] = participants[account] | ACTIVE;
@@ -255,7 +259,7 @@ contract TreasureLedger is ERC20, ERC20Burnable, ERC20Pausable, ERC20Permit, Own
      * Restores access to all previously granted roles.
      * @param account Participant address to enable
      */
-    function enableParticipant(address account) public onlyAdmin {
+    function enableParticipant(address account) external onlyAdmin {
         require(participants[account] != 0, "TreasureLedger: not a participant");
         require(!isParticipant(account), "TreasureLedger: already active");
         participants[account] = participants[account] | ACTIVE;
@@ -267,7 +271,7 @@ contract TreasureLedger is ERC20, ERC20Burnable, ERC20Pausable, ERC20Permit, Own
      * Clears ACTIVE flag but preserves role bits for re-enabling.
      * @param account Participant address to disable
      */
-    function disableParticipant(address account) public onlyAdmin {
+    function disableParticipant(address account) external onlyAdmin {
         require(isParticipant(account), "TreasureLedger: not an active participant");
         participants[account] = participants[account] & ~ACTIVE;
         emit ParticipantDisabled(account);
@@ -290,7 +294,7 @@ contract TreasureLedger is ERC20, ERC20Burnable, ERC20Pausable, ERC20Permit, Own
      * @param account Participant address
      * @param roles Bitmask of roles to grant (e.g., ROLE_MINT | ROLE_APPROVE)
      */
-    function grantRoles(address account, uint8 roles) public onlyAdmin {
+    function grantRoles(address account, uint8 roles) external onlyAdmin {
         require(isParticipant(account), "TreasureLedger: not an active participant");
         require(roles > 0, "TreasureLedger: no roles specified");
         participants[account] = participants[account] | roles;
@@ -302,7 +306,7 @@ contract TreasureLedger is ERC20, ERC20Burnable, ERC20Pausable, ERC20Permit, Own
      * @param account Participant address
      * @param roles Bitmask of roles to revoke
      */
-    function revokeRoles(address account, uint8 roles) public onlyAdmin {
+    function revokeRoles(address account, uint8 roles) external onlyAdmin {
         require(isParticipant(account), "TreasureLedger: not an active participant");
         require(roles > 0, "TreasureLedger: no roles specified");
         participants[account] = participants[account] & ~roles;
@@ -435,8 +439,9 @@ contract TreasureLedger is ERC20, ERC20Burnable, ERC20Pausable, ERC20Permit, Own
         _approve(msg.sender, locAddress, amount);
         emit AllowanceApproved(msg.sender, locAddress, amount);
 
-        // Step 5: Call activateLC on LocManagement
-        locMgmt.activateLC(_locNo);
+        // Step 5: Call activateLC on LocManagement with bank address for verification
+        // Security: Pass msg.sender to enable defense-in-depth validation in LocManagement
+        locMgmt.activateLC(_locNo, msg.sender);
     }
 
 }

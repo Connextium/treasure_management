@@ -91,7 +91,7 @@ contract LocManagement is Ownable {
         uint256 _amount,
         uint256 _dateOfIssue,
         uint256 _dateOfExpiry
-    ) public onlyIssuingBank {
+    ) external onlyIssuingBank {
         if (locContracts[_locNo] != address(0)) revert LCAlreadyExists();
         if (_buyerAcc == address(0) || _sellerAcc == address(0)) revert InvalidAddress();
         if (_amount == 0) revert InvalidAmount();
@@ -121,8 +121,13 @@ contract LocManagement is Ownable {
      * Validates and activates LC status
      * Note: TreasureLedger handles minting and approval before calling this
      * @param _locNo Letter of Credit number
+     * @param _bank Address of the issuing bank (passed from TreasureLedger for validation)
      */
-    function activateLC(uint256 _locNo) public onlyTreasure locMustExist(_locNo) {
+    function activateLC(uint256 _locNo, address _bank) external onlyTreasure locMustExist(_locNo) {
+        // Security Enhancement: Defense-in-depth validation to ensure TreasureLedger
+        // is activating LC for the correct bank, preventing logic bugs
+        if (_bank != issuingBank) revert NotIssuingBank();
+        
         Loc locContract = Loc(locContracts[_locNo]);
         Loc.LocData memory locData = locContract.getLocData();
         
@@ -142,7 +147,7 @@ contract LocManagement is Ownable {
      * Step 3: Call activateLC to set status to Active
      * @param _locNo Letter of Credit number
      */
-    function approveLC(uint256 _locNo) public onlyIssuingBank locMustExist(_locNo) {
+    function approveLC(uint256 _locNo) external onlyIssuingBank locMustExist(_locNo) {
         Loc locContract = Loc(locContracts[_locNo]);
         Loc.LocData memory locData = locContract.getLocData();
         
@@ -182,7 +187,7 @@ contract LocManagement is Ownable {
      * Returns funds to issuing bank if LC was not settled
      * @param _locNo Letter of Credit number
      */
-    function expireLC(uint256 _locNo) public onlyIssuingBank locMustExist(_locNo) {
+    function expireLC(uint256 _locNo) external onlyIssuingBank locMustExist(_locNo) {
         Loc locContract = Loc(locContracts[_locNo]);
         Loc.LocData memory locData = locContract.getLocData();
         
